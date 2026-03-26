@@ -8,4 +8,8 @@ public class Edge{
         this .destination = destination;
         this.distance= distance;
     }
+    @Override
+public String toString() {
+    return destination.name + "(" + distance + ")";
+}
 }

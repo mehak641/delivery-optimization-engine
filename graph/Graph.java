@@ -26,5 +26,9 @@ public class Graph {
     public List<Edge> getNeighbors(Location loc){
         return adjList.get(loc);
     }
+    @Override
+public String toString() {
+    return adjList.toString();
+}
 
 }
