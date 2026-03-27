@@ -14,6 +14,9 @@ public class Main {
             this.weight = weight;
         }
     }
+    enum Status {
+    PENDING, PICKED, DELIVERED
+}
 
     // -------- AGENT --------
     static class Agent {
@@ -32,14 +35,25 @@ public class Main {
         String pickup;
         String drop;
         int priority;
+        Status status;
 
         Order(String id, String pickup, String drop, int priority) {
             this.id = id;
             this.pickup = pickup;
             this.drop = drop;
             this.priority = priority;
+            this.status = Status.PENDING;
         }
     }
+    static class Result {
+    int distance;
+    List<String> path;
+
+    Result(int distance, List<String> path) {
+        this.distance = distance;
+        this.path = path;
+    }
+}
 
     static Map<String, List<Edge>> graph = new HashMap<>();
 
@@ -121,81 +135,137 @@ public class Main {
 
         System.out.println("\n=================== PROCESSING ===================");
 
-        // -------- PROCESS ORDERS --------
-        while (!orders.isEmpty()) {
-            Order order = orders.poll();
+int totalOrders = 0;
+int totalDistanceAll = 0;
+Map<String, Integer> agentDistance = new HashMap<>();
+while (!orders.isEmpty()) {
+    Order order = orders.poll();
 
-            System.out.println("\nProcessing Order: " + order.id +
-                    " (priority: " + order.priority + ")");
+    System.out.println("\nProcessing Order: " + order.id +
+            " (priority: " + order.priority + ")");
 
-            Agent bestAgent = null;
-            int minDistance = Integer.MAX_VALUE;
+    Agent bestAgent = null;
+    Result bestResult = null;
+    int minDistance = Integer.MAX_VALUE;
 
-            for (Agent agent : agents) {
-                int dist = dijkstra(agent.location, order.pickup);
+    // Find nearest agent
+    for (Agent agent : agents) {
+        Result res = dijkstra(agent.location, order.pickup);
 
-                if (dist < minDistance) {
-                    minDistance = dist;
-                    bestAgent = agent;
-                }
-            }
-
-            if (bestAgent == null || minDistance == Integer.MAX_VALUE) {
-                System.out.println("❌ No agent can reach pickup!");
-                continue;
-            }
-
-            int deliveryDist = dijkstra(order.pickup, order.drop);
-            int totalDistance = minDistance + deliveryDist;
-
-            System.out.println("Assigned Agent: " + bestAgent.id);
-           if (bestAgent.location.equals(order.pickup)) {
-    System.out.println("Route: " + order.pickup + " -> " + order.drop);
-} else {
-    System.out.println("Route: " + bestAgent.location + " -> " +
-            order.pickup + " -> " + order.drop);
-}
-            System.out.println("Total Distance: " + totalDistance);
-
-            // Update agent location
-            bestAgent.location = order.drop;
+       if (res.distance < minDistance
+        || (agent == bestAgent && res.distance <= minDistance + 2)) {
+            minDistance = res.distance;
+            bestAgent = agent;
+            bestResult = res;
         }
+    }
 
-        sc.close();
+    if (bestAgent == null || minDistance == Integer.MAX_VALUE) {
+        System.out.println("❌ No agent can reach pickup!");
+        continue;
+    }
+
+    // From pickup to drop
+    Result delivery = dijkstra(order.pickup, order.drop);
+    int totalDistance = bestResult.distance + delivery.distance;
+
+    System.out.println("Assigned Agent: " + bestAgent.id);
+order.status = Status.PICKED;
+    // -------- BUILD FULL PATH --------
+    List<String> fullPath = new ArrayList<>();
+
+    // agent -> pickup
+    fullPath.addAll(bestResult.path);
+
+    // pickup -> drop (avoid duplicate pickup)
+    if (!delivery.path.isEmpty()) {
+        fullPath.addAll(delivery.path.subList(1, delivery.path.size()));
+    }
+
+System.out.println("Route: ");
+
+for (int i = 0; i < fullPath.size() - 1; i++) {
+    System.out.println(bestAgent.id + " moving: "
+            + fullPath.get(i) + " -> " + fullPath.get(i + 1));
+}
+
+System.out.println("Delivered at " + order.drop);
+    System.out.println("Total Distance: " + totalDistance);
+    order.status = Status.DELIVERED;
+System.out.println("Status: " + order.status);
+
+    // Update agent location
+    bestAgent.location = order.drop;
+    totalOrders++;
+totalDistanceAll += totalDistance;
+
+agentDistance.put(
+        bestAgent.id,
+        agentDistance.getOrDefault(bestAgent.id, 0) + totalDistance
+);
+}
+
+System.out.println("\n========= ANALYTICS =========");
+
+System.out.println("Total Orders Delivered: " + totalOrders);
+System.out.println("Total Distance Travelled: " + totalDistanceAll);
+
+// Most active agent
+String best = "";
+int max = 0;
+
+for (String a : agentDistance.keySet()) {
+    if (agentDistance.get(a) > max) {
+        max = agentDistance.get(a);
+        best = a;
+    }
+}
+
+System.out.println("Most Active Agent: " + best);
     }
 
     // -------- DIJKSTRA --------
-    static int dijkstra(String src, String dest) {
+    static Result dijkstra(String src, String dest) {
 
-        if (!graph.containsKey(src) || !graph.containsKey(dest)) {
-            return Integer.MAX_VALUE;
-        }
+    Map<String, Integer> dist = new HashMap<>();
+    Map<String, String> parent = new HashMap<>();
 
-        Map<String, Integer> dist = new HashMap<>();
+    for (String node : graph.keySet()) {
+        dist.put(node, Integer.MAX_VALUE);
+    }
 
-        for (String node : graph.keySet()) {
-            dist.put(node, Integer.MAX_VALUE);
-        }
+    PriorityQueue<Map.Entry<String, Integer>> pq =
+            new PriorityQueue<>(Map.Entry.comparingByValue());
 
-        PriorityQueue<Map.Entry<String, Integer>> pq =
-                new PriorityQueue<>(Map.Entry.comparingByValue());
+    dist.put(src, 0);
+    pq.add(new AbstractMap.SimpleEntry<>(src, 0));
+    parent.put(src, null);
 
-        dist.put(src, 0);
-        pq.add(new AbstractMap.SimpleEntry<>(src, 0));
+    while (!pq.isEmpty()) {
+        String curr = pq.poll().getKey();
 
-        while (!pq.isEmpty()) {
-            String curr = pq.poll().getKey();
+        for (Edge edge : graph.get(curr)) {
+            int newDist = dist.get(curr) + edge.weight;
 
-            for (Edge edge : graph.get(curr)) {
-                int newDist = dist.get(curr) + edge.weight;
-
-                if (newDist < dist.get(edge.to)) {
-                    dist.put(edge.to, newDist);
-                    pq.add(new AbstractMap.SimpleEntry<>(edge.to, newDist));
-                }
+            if (newDist < dist.get(edge.to)) {
+                dist.put(edge.to, newDist);
+                parent.put(edge.to, curr);
+                pq.add(new AbstractMap.SimpleEntry<>(edge.to, newDist));
             }
         }
-
-        return dist.getOrDefault(dest, Integer.MAX_VALUE);
     }
+
+    // Build path
+    List<String> path = new ArrayList<>();
+    String curr = dest;
+
+    while (curr != null) {
+        path.add(curr);
+        curr = parent.get(curr);
+    }
+
+    Collections.reverse(path);
+
+    return new Result(dist.get(dest), path);
+}
 }
